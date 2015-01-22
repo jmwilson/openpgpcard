@@ -8,7 +8,7 @@
   <property name="test.lib" location="test/lib"/>
   <!-- Load user specified extra properties -->
   <property file="${user.home}/javacard.properties"/>
-  <property name="JAVACARD_HOME" value="../java_card_kit-2_2_1"/>
+  <property name="JAVACARD_HOME" value="../java-card-2.2.1"/>
   <property name="JAVA_PACKAGE" value="openpgpcard"/>
   <property name="JAVA_PACKAGE_DIR" value="openpgpcard/"/>
   <property name="APPLET_NAME" value="OpenPGPCardApplet"/>
