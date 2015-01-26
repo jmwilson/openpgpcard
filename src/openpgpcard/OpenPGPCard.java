@@ -13,6 +13,8 @@ public interface OpenPGPCard {
   public static byte CMD_GENERATE_ASYMMETRIC_KEY_PAIR = 0x47;
   public static byte CMD_PERFORM_SECURITY_OPERATION = 0x2A;
   public static byte CMD_INTERNAL_AUTHENTICATE = (byte)0x88;
+  public static byte CMD_TERMINATE_DF = (byte)0xE6;
+  public static byte CMD_ACTIVATE_FILE = 0x44;
 
   public static short PSO_SIGNATURE = (short)0x9E9A;
   public static short PSO_DECIPHER = (short)0x8086;
@@ -33,8 +35,7 @@ public interface OpenPGPCard {
   public static byte ISO5218_FEMALE = 0x32;
   public static byte ISO5218_NOT_APPLICABLE = 0x39;
 
-  public static short CERTIFICATE_SIZE = 0x1000;
-  public static short AUTH_BUFFER_SIZE = 512; // size of 4096 key
+  public static short CERTIFICATE_SIZE = 4096;
 
   public static short DO_PRIVATE_1 = 0x0101;
   public static short DO_PRIVATE_2 = 0x0102;
@@ -78,9 +79,6 @@ public interface OpenPGPCard {
 
   public static byte ALGORITHM_ID_RSA = 1;
   public static byte RSA_EXPONENT_BITS = 32;
-  public static byte RSA_FORMAT_STD = 0;
-  public static byte RSA_FORMAT_STD_MODULUS = 1;
-  public static byte RSA_FORMAT_CRT = 2;
   public static byte RSA_FORMAT_CRT_MODULUS = 3;
   public static byte FINGERPRINT_SIZE = 20;
   public static byte TIMESTAMP_SIZE = 4;

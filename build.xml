@@ -8,7 +8,7 @@
   <property name="test.lib" location="test/lib"/>
   <!-- Load user specified extra properties -->
   <property file="${user.home}/javacard.properties"/>
-  <property name="JAVACARD_HOME" value="../java-card-2.2.1"/>
+  <property name="JAVACARD_HOME" value="../java-card-2.2.2"/>
   <property name="JAVA_PACKAGE" value="openpgpcard"/>
   <property name="JAVA_PACKAGE_DIR" value="openpgpcard/"/>
   <property name="APPLET_NAME" value="OpenPGPCardApplet"/>
@@ -20,14 +20,14 @@
     <mkdir dir="${test.build}/output"/>
   </target>
   <target name="compile" depends="init" description="compile the source" unless="test.build.mock">
-    <javac debug="true" srcdir="${src}" destdir="${build}" includeantruntime="false" source="1.2" target="1.2">
+    <javac debug="true" srcdir="${src}" destdir="${build}" includeantruntime="false" source="1.5" target="1.5">
       <classpath>
         <pathelement path="${JAVACARD_HOME}/lib/api.jar"/>
       </classpath>
     </javac>
   </target>
   <target name="compileMock" depends="init" description="compile with mocked javacard" if="test.build.mock">
-    <javac srcdir="${src}" destdir="${build}" source="1.2" target="1.1" includeantruntime="false">
+    <javac srcdir="${src}" destdir="${build}" source="1.4" target="1.4" includeantruntime="false">
       <classpath>
         <fileset dir="${test.lib}">
           <include name="*.jar"/>
