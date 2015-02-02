@@ -3,3 +3,4 @@ syntax: glob
 *.jca
 *.exp
 *.cap
+*.orig
