@@ -61,12 +61,14 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
   private boolean forceSignaturePIN = true;
   private byte signatureCounterHigh = (byte)0;
   private short signatureCounterLow = (short)0;
-  private byte[] certificate;
-  private short certificateLength = (short)0;
+
+  private byte[] certificateBuffer1;
+  private byte[] certificateBuffer2;
+  private byte currentCertificate = (byte)0;
 
   private byte[] outputChainingBuffer;
-  private short outputChainingLength = (short)0;
-  private short outputChainingSent = (short)0;
+  private short[] outputChain;
+  private byte[] inputChain;
 
   private Cipher rsa;
   private RandomData randomGen;
@@ -105,14 +107,18 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
       (short)2, JCSystem.CLEAR_ON_DESELECT);
     scratchBuffer = JCSystem.makeTransientByteArray(
       (short)(KeyBuilder.LENGTH_RSA_2048 >> 3), JCSystem.CLEAR_ON_DESELECT);
+    outputChain = JCSystem.makeTransientShortArray(
+      (short)2, JCSystem.CLEAR_ON_DESELECT);
+    inputChain = JCSystem.makeTransientByteArray(
+      (short)3, JCSystem.CLEAR_ON_DESELECT);
 
     name = new byte[OpenPGPCard.NAME_SIZE];
     languagePrefs = new byte[OpenPGPCard.LANGUAGE_PREFS_SIZE];
     url = new byte[OpenPGPCard.URL_SIZE];
     loginData = new byte[OpenPGPCard.LOGIN_DATA_SIZE];
-    byte loginData_length = 0;
 
     // hax to get GPG to recognize the card as supporting PIN entry
+    byte loginData_length = 0;
     loginData[loginData_length++] = (byte)7;
     loginData[loginData_length++] = '\n';
     loginData[loginData_length++] = 0x14;
@@ -143,7 +149,8 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     ca2Fingerprint = new byte[OpenPGPCard.FINGERPRINT_SIZE];
     ca3Fingerprint = new byte[OpenPGPCard.FINGERPRINT_SIZE];
 
-    certificate = new byte[OpenPGPCard.CERTIFICATE_SIZE];
+    certificateBuffer1 = new byte[2 + OpenPGPCard.CERTIFICATE_SIZE];
+    certificateBuffer2 = new byte[2 + OpenPGPCard.CERTIFICATE_SIZE];
 
     rsa = Cipher.getInstance(Cipher.ALG_RSA_PKCS1, false);
     randomGen = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
@@ -157,13 +164,29 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
   }
 
   public void process(APDU apdu) throws ISOException {
-    if (selectingApplet()) {
-      if (terminated) {
-        ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
-      }
-      return;
+    short le = 0;
+
+    try {
+      le = _process(apdu);
+    } catch (ISOException e) {
+      outputChain[0] = outputChain[1] = (short)0;
+      inputChain[0] = (byte)0;
+      throw e;
     }
 
+    if (le > (short)0) {
+      apdu.setOutgoingAndSend((short)0, le);
+      if (outputChain[0] < outputChain[1]) {
+        short left = (short)(outputChain[1] - outputChain[0]);
+        if (left > 0xFF) {
+          left = 0xFF;
+        }
+        ISOException.throwIt((short)(ISO7816.SW_BYTES_REMAINING_00 | left));
+      }
+    }
+  }
+
+  private short _process(APDU apdu) throws ISOException {
     byte[] buffer = apdu.getBuffer();
     byte cla = buffer[ISO7816.OFFSET_CLA];
     byte ins = buffer[ISO7816.OFFSET_INS];
@@ -175,8 +198,27 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     if (terminated && ins != OpenPGPCard.CMD_ACTIVATE_FILE) {
       ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
     }
+    if (selectingApplet()) {
+      return (short)0;
+    }
     if (ins != OpenPGPCard.CMD_GET_RESPONSE) {
-      outputChainingSent = outputChainingLength = (short)0;
+      outputChain[0]= outputChain[1] = (short)0;
+    }
+    if (inputChain[0] != 0) {
+      if (inputChain[0] != ins || inputChain[1] != p1 ||
+          inputChain[2] != p2) {
+        ISOException.throwIt(ISO7816.SW_LAST_COMMAND_EXPECTED);
+      }
+    }
+    if ((cla & (byte)0x10) != 0) {
+      if (ins != OpenPGPCard.CMD_PUT_DATA) {
+        ISOException.throwIt(ISO7816.SW_COMMAND_CHAINING_NOT_SUPPORTED);
+      }
+      inputChain[0] = ins;
+      inputChain[1] = p1;
+      inputChain[2] = p2;
+    } else {
+      inputChain[0] = (byte)0;
     }
 
     switch (ins) {
@@ -225,31 +267,21 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
       default:
         ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
     }
-
-    if (le > (short)0) {
-      apdu.setOutgoingAndSend((short)0, le);
-      if (outputChainingSent < outputChainingLength) {
-        short left = (short)(outputChainingLength - outputChainingSent);
-        if (left > 0xFF) {
-          left = 0xFF;
-        }
-        ISOException.throwIt((short)(ISO7816.SW_BYTES_REMAINING_00 | left));
-      }
-    }
+    return le;
   }
 
   private short getResponse(APDU apdu) {
     byte[] buffer = apdu.getBuffer();
     byte p1 = buffer[ISO7816.OFFSET_P1];
     byte p2 = buffer[ISO7816.OFFSET_P2];
-    short le = (short)(outputChainingLength - outputChainingSent);
+    short le = (short)(outputChain[1] - outputChain[0]);
 
     invariant(p1 == 0 && p2 == 0, ISO7816.SW_INCORRECT_P1P2);
     if (le > 0xFF) {
       le = 0xFF;
     }
-    outputChainingSent += Util.arrayCopyNonAtomic(
-      outputChainingBuffer, outputChainingSent,
+    outputChain[0] += Util.arrayCopyNonAtomic(
+      outputChainingBuffer, outputChain[0],
       buffer, (short)0,
       le
     );
@@ -566,25 +598,30 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         return Util.setShort(buffer, data_len, signatureCounterLow);
       case OpenPGPCard.DO_CERTIFICATE:  // TLV encoded
         data_len = Util.setShort(buffer, data_len, OpenPGPCard.DO_CERTIFICATE);
-        if (certificateLength < (short)0x80) {
-          buffer[data_len++] = (byte)certificateLength;
-        } else if (certificateLength < (short)0x100) {
+        byte[] cert = currentCertificate == (byte)0
+          ? certificateBuffer1
+          : certificateBuffer2;
+        short cert_length = Util.getShort(cert, (short)0);
+        if (cert_length < (short)0x80) {
+          buffer[data_len++] = (byte)cert_length;
+        } else if (cert_length < (short)0x100) {
           buffer[data_len++] = (byte)0x81;
-          buffer[data_len++] = (byte)certificateLength;
+          buffer[data_len++] = (byte)cert_length;
         } else {
           buffer[data_len++] = (byte)0x82;
-          data_len = Util.setShort(buffer, data_len, certificateLength);
+          data_len = Util.setShort(buffer, data_len, cert_length);
         }
 
-        if ((short)(data_len + certificateLength) < (short)0x100) {
+        if ((short)(data_len + cert_length) < (short)0x100) {
           return Util.arrayCopyNonAtomic(
-            certificate, (short)0, buffer, data_len, certificateLength);
+            cert, (short)2, buffer, data_len, cert_length);
         } else {
-          outputChainingBuffer = certificate;
-          outputChainingLength = certificateLength;
-          outputChainingSent = (short)(0xFF - data_len);
+          // First two bytes are length, so adjust length and offset.
+          outputChainingBuffer = cert;
+          outputChain[1] = (short)(2 + cert_length);
+          outputChain[0] = (short)(2 + 0xFF - data_len);
           return Util.arrayCopyNonAtomic(
-            certificate, (short)0, buffer, data_len, outputChainingSent);
+            cert, (short)2, buffer, (short)0, (short)(outputChain[0] - 2));
         }
       default:
         ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
@@ -628,12 +665,16 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
 
   private void putData(APDU apdu) {
     byte[] buffer = apdu.getBuffer();
+    byte cla = buffer[ISO7816.OFFSET_CLA];
     short tag = Util.makeShort(
       buffer[ISO7816.OFFSET_P1], buffer[ISO7816.OFFSET_P2]);
     short lc = apdu.setIncomingAndReceive();
     short offset_cdata = apdu.getOffsetCdata();
 
     invariant(apdu.getIncomingLength() == lc, ISO7816.SW_WRONG_LENGTH);
+    if ((cla & (byte)0x10) != 0 && tag != OpenPGPCard.DO_CERTIFICATE) {
+      ISOException.throwIt(ISO7816.SW_COMMAND_CHAINING_NOT_SUPPORTED);
+    }
 
     if (tag == OpenPGPCard.DO_PRIVATE_1 || tag == OpenPGPCard.DO_PRIVATE_3) {
       if (!(pw1.isValidated() && pw1ValidatedMode[1])) {
@@ -720,7 +761,22 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         );
         break;
       case OpenPGPCard.DO_CERTIFICATE:
-
+        byte[] cert = currentCertificate == (byte)0
+          ? certificateBuffer2
+          : certificateBuffer1;
+        short offset = Util.getShort(cert, (short)0);
+        invariant(
+          (short)(offset + lc) <= OpenPGPCard.CERTIFICATE_SIZE,
+          ISO7816.SW_WRONG_LENGTH
+        );
+        JCSystem.beginTransaction();
+        offset = Util.arrayCopy(
+          buffer, offset_cdata, cert, (short)(2 + offset), lc);
+        Util.setShort(cert, (short)0, (short)(offset - 2));
+        if ((cla & (byte)0x10) == 0) {
+          currentCertificate ^= 1;
+        }
+        JCSystem.commitTransaction();
         break;
       case OpenPGPCard.DO_PW_STATUS:
         invariant(lc == (short)1, (short)(ISO7816.SW_CORRECT_LENGTH_00 | 1));
@@ -905,8 +961,8 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
       ((RSAPublicKey)key.getPublic()).getModulus(scratchBuffer, (short)0);
     data_len = Util.setShort(buffer, data_len, key_size);
     outputChainingBuffer = scratchBuffer;
-    outputChainingLength = key_size;
-    outputChainingSent = (short)0;
+    outputChain[1] = key_size;
+    outputChain[0] = (short)0;
 
     Util.setShort(buffer, (short)3, (short)(2 + exp_length + 4 + key_size));
     return data_len;
@@ -1085,8 +1141,12 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     signatureCounterLow = (short)0;
 
     Util.arrayFillNonAtomic(
-      certificate, (short)0, OpenPGPCard.CERTIFICATE_SIZE, (byte)0);
-    certificateLength = (short)0;
+      certificateBuffer1,
+      (short)0, (short)(2 + OpenPGPCard.CERTIFICATE_SIZE), (byte)0);
+    Util.arrayFillNonAtomic(
+      certificateBuffer2,
+      (short)0, (short)(2 + OpenPGPCard.CERTIFICATE_SIZE), (byte)0);
+    currentCertificate = (byte)0;
 
     terminated = false;
   }
