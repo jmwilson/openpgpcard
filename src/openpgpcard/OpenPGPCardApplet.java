@@ -6,6 +6,7 @@ import javacard.framework.JCSystem;
 import javacard.framework.OwnerPIN;
 import javacard.framework.ISO7816;
 import javacard.framework.Util;
+import javacard.security.CryptoException;
 import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 import javacard.security.RandomData;
@@ -175,7 +176,8 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     }
 
     if (le > (short)0) {
-      apdu.setOutgoingAndSend((short)0, le);
+      apdu.setOutgoingLength(le);
+      apdu.sendBytes((short)0, le);
       if (outputChain[0] < outputChain[1]) {
         short left = (short)(outputChain[1] - outputChain[0]);
         if (left > 0xFF) {
@@ -274,11 +276,12 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     byte[] buffer = apdu.getBuffer();
     byte p1 = buffer[ISO7816.OFFSET_P1];
     byte p2 = buffer[ISO7816.OFFSET_P2];
-    short le = (short)(outputChain[1] - outputChain[0]);
+    short le = apdu.setOutgoing();
+    short lr = (short)(outputChain[1] - outputChain[0]);
 
     invariant(p1 == 0 && p2 == 0, ISO7816.SW_INCORRECT_P1P2);
-    if (le > 0xFF) {
-      le = 0xFF;
+    if (le > le) {
+      lr = le;
     }
     outputChain[0] += Util.arrayCopyNonAtomic(
       outputChainingBuffer, outputChain[0],
@@ -420,6 +423,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
       buffer[ISO7816.OFFSET_P1], buffer[ISO7816.OFFSET_P2]);
     short data_len = 0;
     short tmp_length;
+    short le = apdu.setOutgoing();
 
     switch (tag) {
       case OpenPGPCard.DO_PRIVATE_1:
@@ -612,16 +616,17 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
           data_len = Util.setShort(buffer, data_len, cert_length);
         }
 
-        if ((short)(data_len + cert_length) < (short)0x100) {
+        if ((short)(data_len + cert_length) < le) {
           return Util.arrayCopyNonAtomic(
             cert, (short)2, buffer, data_len, cert_length);
         } else {
           // First two bytes are length, so adjust length and offset.
           outputChainingBuffer = cert;
           outputChain[1] = (short)(2 + cert_length);
-          outputChain[0] = (short)(2 + 0xFF - data_len);
-          return Util.arrayCopyNonAtomic(
+          outputChain[0] = (short)(2 + le - data_len);
+          data_len += Util.arrayCopyNonAtomic(
             cert, (short)2, buffer, (short)0, (short)(outputChain[0] - 2));
+          return data_len;
         }
       default:
         ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
@@ -965,6 +970,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     outputChain[0] = (short)0;
 
     Util.setShort(buffer, (short)3, (short)(2 + exp_length + 4 + key_size));
+    apdu.setOutgoing();
     return data_len;
   }
 
@@ -990,6 +996,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     if (++signatureCounterLow == 0) {
       signatureCounterHigh++;
     }
+    apdu.setOutgoing();
     rsa.init(signKey.getPrivate(), Cipher.MODE_ENCRYPT);
     return rsa.doFinal(scratchBuffer, (short)0, lc, buffer, (short)0);
   }
@@ -1010,6 +1017,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
 
     Util.arrayCopyNonAtomic(
       buffer, apdu.getOffsetCdata(), scratchBuffer, (short)0, lc);
+    apdu.setOutgoing();
     rsa.init(decryptKey.getPrivate(), Cipher.MODE_DECRYPT);
     return rsa.doFinal(scratchBuffer, (short)0, lc, buffer, (short)0);
   }
@@ -1024,13 +1032,14 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     byte[] buffer = apdu.getBuffer();
     byte p1 = buffer[ISO7816.OFFSET_P1];
     byte p2 = buffer[ISO7816.OFFSET_P2];
-    short le = (short)(buffer[ISO7816.OFFSET_LC] & 0xFF);
+    short le = apdu.setOutgoing();
 
     invariant(p1 == 0 && p2 == 0, ISO7816.SW_INCORRECT_P1P2);
-    if (le == 0) {
-      le = 0xFF;
+    try {
+      randomGen.generateData(buffer, (short)0, le);
+    } catch (CryptoException e) {
+      ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
     }
-    randomGen.generateData(buffer, (short)0, le);
     return le;
   }
 
@@ -1052,6 +1061,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
 
     Util.arrayCopyNonAtomic(
       buffer, apdu.getOffsetCdata(), scratchBuffer, (short)0, lc);
+    apdu.setOutgoing();
     rsa.init(authKey.getPrivate(), Cipher.MODE_ENCRYPT);
     return rsa.doFinal(scratchBuffer, (short)0, lc, buffer, (short)0);
   }
