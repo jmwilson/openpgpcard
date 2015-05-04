@@ -910,6 +910,17 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     }
   }
 
+  private short saveKeyPartTemplate(byte tag, short offset, short store_offset) {
+    invariant(scratchBuffer[offset] == tag, ISO7816.SW_WRONG_DATA);
+    Util.setShort(
+      inputChain, store_offset,
+      BERTLV.getLength(scratchBuffer, (short)(offset + 1))
+    );
+    return (short)(2 + (scratchBuffer[(short)(offset + 1)] > (byte)0x80
+      ? scratchBuffer[(short)(offset + 1)] & 0x7F
+      : 0));
+  }
+
   private short generateKey(APDU apdu) {
     byte[] buffer = apdu.getBuffer();
     byte p1 = buffer[ISO7816.OFFSET_P1];
