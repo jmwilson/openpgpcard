@@ -87,6 +87,8 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
   private byte[] authKeyFingerprint;
   private byte[] authKeyTimestamp;
 
+  private KeyPair importKey;
+
   private byte[] ca1Fingerprint;
   private byte[] ca2Fingerprint;
   private byte[] ca3Fingerprint;
@@ -112,7 +114,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     outputChain = JCSystem.makeTransientShortArray(
       (short)2, JCSystem.CLEAR_ON_DESELECT);
     inputChain = JCSystem.makeTransientByteArray(
-      (short)3, JCSystem.CLEAR_ON_DESELECT);
+      OpenPGPCard.INPUT_CHAIN_STATE_SIZE, JCSystem.CLEAR_ON_DESELECT);
 
     name = new byte[OpenPGPCard.NAME_SIZE];
     languagePrefs = new byte[OpenPGPCard.LANGUAGE_PREFS_SIZE];
@@ -138,6 +140,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     signKey = new KeyPair(KeyPair.ALG_RSA_CRT, KeyBuilder.LENGTH_RSA_2048);
     decryptKey = new KeyPair(KeyPair.ALG_RSA_CRT, KeyBuilder.LENGTH_RSA_2048);
     authKey = new KeyPair(KeyPair.ALG_RSA_CRT, KeyBuilder.LENGTH_RSA_2048);
+    importKey = new KeyPair(KeyPair.ALG_RSA_CRT, KeyBuilder.LENGTH_RSA_2048);
 
     signKeyFingerprint = new byte[OpenPGPCard.FINGERPRINT_SIZE];
     decryptKeyFingerprint = new byte[OpenPGPCard.FINGERPRINT_SIZE];
@@ -172,7 +175,8 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
       le = _process(apdu);
     } catch (ISOException e) {
       outputChain[0] = outputChain[1] = (short)0;
-      inputChain[0] = (byte)0;
+      Util.arrayFillNonAtomic(
+        inputChain, (short)0, OpenPGPCard.INPUT_CHAIN_STATE_SIZE, (byte)0);
       throw e;
     }
 
@@ -220,7 +224,8 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
       inputChain[1] = p1;
       inputChain[2] = p2;
     } else {
-      inputChain[0] = (byte)0;
+      Util.arrayFillNonAtomic(
+        inputChain, (short)0, OpenPGPCard.INPUT_CHAIN_STATE_SIZE, (byte)0);
     }
 
     switch (ins) {
