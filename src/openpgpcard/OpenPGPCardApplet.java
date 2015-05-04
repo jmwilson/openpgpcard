@@ -67,9 +67,9 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
   private byte[] certificateBuffer2;
   private byte currentCertificate = (byte)0;
 
-  private byte[] outputChainingBuffer;
-  private short[] outputChain;
-  private byte[] inputChain;
+  private byte[] outputChainingBuffer;  // transient
+  private short[] outputChain;  // transient
+  private byte[] inputChain;  // transient
 
   private Cipher rsa;
   private RandomData randomGen;
@@ -190,7 +190,6 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
 
   private short _process(APDU apdu) throws ISOException {
     byte[] buffer = apdu.getBuffer();
-    byte cla = buffer[ISO7816.OFFSET_CLA];
     byte ins = buffer[ISO7816.OFFSET_INS];
     byte p1 = buffer[ISO7816.OFFSET_P1];
     byte p2 = buffer[ISO7816.OFFSET_P2];
@@ -212,8 +211,8 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         ISOException.throwIt(ISO7816.SW_LAST_COMMAND_EXPECTED);
       }
     }
-    if ((cla & (byte)0x10) != 0) {
-      if (ins != OpenPGPCard.CMD_PUT_DATA) {
+    if (apdu.isCommandChainingCLA()) {
+      if (ins != OpenPGPCard.CMD_PUT_DATA && ins != OpenPGPCard.CMD_PUT_KEY) {
         ISOException.throwIt(ISO7816.SW_COMMAND_CHAINING_NOT_SUPPORTED);
       }
       inputChain[0] = ins;
@@ -280,15 +279,15 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     short lr = (short)(outputChain[1] - outputChain[0]);
 
     invariant(p1 == 0 && p2 == 0, ISO7816.SW_INCORRECT_P1P2);
-    if (le > le) {
+    if (lr > le) {
       lr = le;
     }
     outputChain[0] += Util.arrayCopyNonAtomic(
       outputChainingBuffer, outputChain[0],
       buffer, (short)0,
-      le
+      lr
     );
-    return le;
+    return lr;
   }
 
   private void verify(APDU apdu) {
@@ -625,7 +624,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
           outputChain[1] = (short)(2 + cert_length);
           outputChain[0] = (short)(2 + le - data_len);
           data_len += Util.arrayCopyNonAtomic(
-            cert, (short)2, buffer, (short)0, (short)(outputChain[0] - 2));
+            cert, (short)2, buffer, data_len, (short)(le - data_len));
           return data_len;
         }
       default:
@@ -677,7 +676,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     short offset_cdata = apdu.getOffsetCdata();
 
     invariant(apdu.getIncomingLength() == lc, ISO7816.SW_WRONG_LENGTH);
-    if ((cla & (byte)0x10) != 0 && tag != OpenPGPCard.DO_CERTIFICATE) {
+    if (apdu.isCommandChainingCLA() && tag != OpenPGPCard.DO_CERTIFICATE) {
       ISOException.throwIt(ISO7816.SW_COMMAND_CHAINING_NOT_SUPPORTED);
     }
 
@@ -778,7 +777,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         offset = Util.arrayCopy(
           buffer, offset_cdata, cert, (short)(2 + offset), lc);
         Util.setShort(cert, (short)0, (short)(offset - 2));
-        if ((cla & (byte)0x10) == 0) {
+        if (!apdu.isCommandChainingCLA()) {
           currentCertificate ^= 1;
         }
         JCSystem.commitTransaction();
@@ -969,6 +968,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     outputChain[1] = key_size;
     outputChain[0] = (short)0;
 
+    // Go back and set the header length at offset 3
     Util.setShort(buffer, (short)3, (short)(2 + exp_length + 4 + key_size));
     apdu.setOutgoing();
     return data_len;
@@ -1070,10 +1070,8 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     byte[] buffer = apdu.getBuffer();
     byte p1 = buffer[ISO7816.OFFSET_P1];
     byte p2 = buffer[ISO7816.OFFSET_P2];
-    short lc = apdu.setIncomingAndReceive();
 
     invariant(p1 == 0 && p2 == 0, ISO7816.SW_INCORRECT_P1P2);
-    invariant(lc == 0, ISO7816.SW_CORRECT_LENGTH_00);
     invariant(
       pw1.getTriesRemaining() == 0 && pw3.getTriesRemaining() == 0,
       ISO7816.SW_CONDITIONS_NOT_SATISFIED
@@ -1086,10 +1084,8 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     byte[] buffer = apdu.getBuffer();
     byte p1 = buffer[ISO7816.OFFSET_P1];
     byte p2 = buffer[ISO7816.OFFSET_P2];
-    short lc = apdu.setIncomingAndReceive();
 
     invariant(p1 == 0 && p2 == 0, ISO7816.SW_INCORRECT_P1P2);
-    invariant(lc == 0, ISO7816.SW_CORRECT_LENGTH_00);
     if (!terminated) {
       return;
     }
