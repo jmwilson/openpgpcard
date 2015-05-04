@@ -14,6 +14,7 @@ import javacard.security.RSAPrivateKey;
 import javacard.security.RSAPrivateCrtKey;
 import javacard.security.RSAPublicKey;
 import javacardx.crypto.Cipher;
+import javacardx.framework.tlv.*;
 
 public class OpenPGPCardApplet extends javacard.framework.Applet
   implements javacardx.apdu.ExtendedLength {
