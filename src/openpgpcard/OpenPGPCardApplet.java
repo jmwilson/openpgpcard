@@ -929,6 +929,37 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
       : 0));
   }
 
+  private short readStage(APDU apdu, short stage_size, short apdu_unread) {
+    byte buffer[] = apdu.getBuffer();
+    short offset_cdata = apdu.getOffsetCdata();
+
+    while(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) < stage_size
+          && (apdu_unread > (short)0 ||
+              apdu.getCurrentState() != APDU.STATE_FULL_INCOMING)) {
+      if (apdu_unread == (short)0) {
+        apdu_unread = apdu.receiveBytes(offset_cdata);
+      }
+      short length = apdu_unread < (short)(stage_size -
+        Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED))
+        ? apdu_unread
+        : (short)(stage_size -
+                  Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED));
+      Util.setShort(
+        inputChain, OpenPGPCard.OFFSET_RECEIVED,
+        Util.arrayCopyNonAtomic(
+          buffer, offset_cdata,
+          scratchBuffer, Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED),
+          length
+        )
+      );
+      apdu_unread -= length;
+    }
+    // At the end of the loop, either we have at least stage_size bytes in
+    // scratchBuffer, or no bytes in the APDU buffer and no futher
+    // bytes available to receive.
+    return apdu_unread;
+  }
+
   private short generateKey(APDU apdu) {
     byte[] buffer = apdu.getBuffer();
     byte p1 = buffer[ISO7816.OFFSET_P1];
