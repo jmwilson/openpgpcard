@@ -14,7 +14,6 @@ import javacard.security.RSAPrivateKey;
 import javacard.security.RSAPrivateCrtKey;
 import javacard.security.RSAPublicKey;
 import javacardx.crypto.Cipher;
-import javacardx.framework.tlv.*;
 
 public class OpenPGPCardApplet extends javacard.framework.Applet
   implements javacardx.apdu.ExtendedLength {
@@ -912,10 +911,19 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
 
   private short saveKeyPartTemplate(byte tag, short offset, short store_offset) {
     invariant(scratchBuffer[offset] == tag, ISO7816.SW_WRONG_DATA);
-    Util.setShort(
-      inputChain, store_offset,
-      BERTLV.getLength(scratchBuffer, (short)(offset + 1))
-    );
+    byte b = scratchBuffer[(short)(offset + 1)];
+    if (b < (byte)0x80) {
+      Util.setShort(inputChain, store_offset, b);
+    } else if (b == (byte)0x81) {
+      Util.setShort(
+        inputChain, store_offset, scratchBuffer[(short)(offset + 1)]);
+    } else {
+      Util.setShort(
+        inputChain, store_offset,
+        Util.getShort(scratchBuffer, (short)(offset + 2))
+      );
+    }
+
     return (short)(2 + (scratchBuffer[(short)(offset + 1)] > (byte)0x80
       ? scratchBuffer[(short)(offset + 1)] & 0x7F
       : 0));
