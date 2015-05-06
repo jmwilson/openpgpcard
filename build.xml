@@ -6,11 +6,12 @@
   <property name="test.src" location="test/src"/>
   <property name="test.build" location="test/bin"/>
   <property name="test.lib" location="test/lib"/>
+  <property environment="env"/>
   <!-- Load user specified extra properties -->
   <property file="${user.home}/javacard.properties"/>
-  <property name="JAVACARD_HOME" value="../java-card-2.2.2"/>
+  <property name="JAVACARD_HOME" value="${env.JC_HOME}"/>
   <property name="JAVA_PACKAGE" value="openpgpcard"/>
-  <property name="JAVA_PACKAGE_DIR" value="openpgpcard/"/>
+  <property name="JAVA_PACKAGE_DIR" value="openpgpcard"/>
   <property name="APPLET_NAME" value="OpenPGPCardApplet"/>
   <property name="PACKAGE_AID" value="0xd2:0x76:0x00:0x01:0x24:0x01"/>
   <property name="APPLET_AID" value="0xd2:0x76:0x00:0x01:0x24:0x01:0x02:0x00:0x00:0x00:0x00:0x00:0x00:0x55:0x00:0x00"/>
@@ -25,9 +26,10 @@
         <pathelement path="${JAVACARD_HOME}/lib/api.jar"/>
       </classpath>
     </javac>
+    <jar destfile="${JAVA_PACKAGE}.jar" basedir="${build}"/>
   </target>
   <target name="compileMock" depends="init" description="compile with mocked javacard" if="test.build.mock">
-    <javac srcdir="${src}" destdir="${build}" source="1.4" target="1.4" includeantruntime="false">
+    <javac srcdir="${src}" destdir="${build}" source="1.5" target="1.5" includeantruntime="false">
       <classpath>
         <fileset dir="${test.lib}">
           <include name="*.jar"/>

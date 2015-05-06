@@ -915,19 +915,23 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
   private short saveKeyPartTemplate(byte tag, short offset, short store_offset) {
     invariant(scratchBuffer[offset] == tag, ISO7816.SW_WRONG_DATA);
     byte b = scratchBuffer[(short)(offset + 1)];
-    if (b < (byte)0x80) {
+    if ((b & (byte)0x80) == 0) {
       Util.setShort(inputChain, store_offset, b);
     } else if (b == (byte)0x81) {
       Util.setShort(
-        inputChain, store_offset, scratchBuffer[(short)(offset + 1)]);
-    } else {
+        inputChain, store_offset,
+        (short)(scratchBuffer[(short)(offset + 2)] & 0xFF)
+      );
+    } else if (b == (byte)0x82) {
       Util.setShort(
         inputChain, store_offset,
         Util.getShort(scratchBuffer, (short)(offset + 2))
       );
+    } else {
+      ISOException.throwIt(ISO7816.SW_WRONG_DATA);
     }
 
-    return (short)(2 + (scratchBuffer[(short)(offset + 1)] > (byte)0x80
+    return (short)(2 + (((scratchBuffer[(short)(offset + 1)] & (byte)0x80) != 0)
       ? scratchBuffer[(short)(offset + 1)] & 0x7F
       : 0));
   }
@@ -950,12 +954,12 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         apdu_unread = readStage(apdu, stage_length, apdu_unread);
         if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
             < stage_length) {
-          break;
+          return;
         }
 
         // Extended header list (tag 0x4D) + length
         invariant(scratchBuffer[0] == 0x4D, ISO7816.SW_WRONG_DATA);
-        offset = (short)(2 + (scratchBuffer[1] > (byte)0x80
+        offset = (short)(2 + (((scratchBuffer[1] & (byte)0x80) != 0)
           ? scratchBuffer[1] & 0x7F : 0));
 
         // Control reference template
@@ -974,7 +978,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
             OpenPGPCard.DO_PRIVATE_KEY_TEMPLATE,
           ISO7816.SW_WRONG_DATA
         );
-        offset += (short)(3 + (scratchBuffer[(short)(offset + 2)] > (byte)0x80
+        offset += (short)(3 + (((scratchBuffer[(short)(offset + 2)] & (byte)0x80) != 0)
           ? scratchBuffer[(short)(offset + 2)] & 0x7F : 0));
 
         offset += saveKeyPartTemplate(
@@ -998,7 +1002,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
             OpenPGPCard.DO_PRIVATE_KEY_DATA,
           ISO7816.SW_WRONG_DATA
         );
-        offset += (short)(3 + (scratchBuffer[(short)(offset + 2)] > (byte)0x80
+        offset += (short)(3 + (((scratchBuffer[(short)(offset + 2)] & (byte)0x80) != 0)
           ? scratchBuffer[(short)(offset + 2)] & 0x7F : 0));
 
         // Move anything left over to the head of scratchBuffer and
@@ -1021,11 +1025,15 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         apdu_unread = readStage(apdu, stage_length, apdu_unread);
         if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
             < stage_length) {
-          break;
+          return;
         }
         ((RSAPublicKey)importKey.getPublic())
           .setExponent(scratchBuffer, (short)0, stage_length);
-
+        Util.arrayCopyNonAtomic(
+          scratchBuffer, stage_length,
+          scratchBuffer, (short)0,
+          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) - stage_length)
+        );
         Util.setShort(
           inputChain, OpenPGPCard.OFFSET_RECEIVED,
           (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
@@ -1038,11 +1046,15 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         apdu_unread = readStage(apdu, stage_length, apdu_unread);
         if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
             < stage_length) {
-          break;
+          return;
         }
         ((RSAPrivateCrtKey)importKey.getPrivate())
           .setP(scratchBuffer, (short)0, stage_length);
-
+        Util.arrayCopyNonAtomic(
+          scratchBuffer, stage_length,
+          scratchBuffer, (short)0,
+          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) - stage_length)
+        );
         Util.setShort(
           inputChain, OpenPGPCard.OFFSET_RECEIVED,
           (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
@@ -1055,11 +1067,15 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         apdu_unread = readStage(apdu, stage_length, apdu_unread);
         if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
             < stage_length) {
-          break;
+          return;
         }
         ((RSAPrivateCrtKey)importKey.getPrivate())
           .setQ(scratchBuffer, (short)0, stage_length);
-
+        Util.arrayCopyNonAtomic(
+          scratchBuffer, stage_length,
+          scratchBuffer, (short)0,
+          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) - stage_length)
+        );
         Util.setShort(
           inputChain, OpenPGPCard.OFFSET_RECEIVED,
           (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
@@ -1072,11 +1088,15 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         apdu_unread = readStage(apdu, stage_length, apdu_unread);
         if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
             < stage_length) {
-          break;
+          return;
         }
         ((RSAPrivateCrtKey)importKey.getPrivate())
           .setPQ(scratchBuffer, (short)0, stage_length);
-
+        Util.arrayCopyNonAtomic(
+          scratchBuffer, stage_length,
+          scratchBuffer, (short)0,
+          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) - stage_length)
+        );
         Util.setShort(
           inputChain, OpenPGPCard.OFFSET_RECEIVED,
           (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
@@ -1089,11 +1109,15 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         apdu_unread = readStage(apdu, stage_length, apdu_unread);
         if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
             < stage_length) {
-          break;
+          return;
         }
         ((RSAPrivateCrtKey)importKey.getPrivate())
           .setDP1(scratchBuffer, (short)0, stage_length);
-
+        Util.arrayCopyNonAtomic(
+          scratchBuffer, stage_length,
+          scratchBuffer, (short)0,
+          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) - stage_length)
+        );
         Util.setShort(
           inputChain, OpenPGPCard.OFFSET_RECEIVED,
           (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
@@ -1106,11 +1130,15 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         apdu_unread = readStage(apdu, stage_length, apdu_unread);
         if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
             < stage_length) {
-          break;
+          return;
         }
         ((RSAPrivateCrtKey)importKey.getPrivate())
           .setDQ1(scratchBuffer, (short)0, stage_length);
-
+        Util.arrayCopyNonAtomic(
+          scratchBuffer, stage_length,
+          scratchBuffer, (short)0,
+          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) - stage_length)
+        );
         Util.setShort(
           inputChain, OpenPGPCard.OFFSET_RECEIVED,
           (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
@@ -1124,7 +1152,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         apdu_unread = readStage(apdu, stage_length, apdu_unread);
         if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
             < stage_length) {
-          break;
+          return;
         }
         ((RSAPublicKey)importKey.getPublic())
           .setModulus(scratchBuffer, (short)0, stage_length);

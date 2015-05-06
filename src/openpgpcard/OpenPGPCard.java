@@ -122,7 +122,7 @@ public interface OpenPGPCard {
   public static byte OFFSET_Q_LENGTH = 12;
   public static byte OFFSET_PQ_LENGTH = 14;
   public static byte OFFSET_DP1_LENGTH = 16;
-  public static byte OFFSET_DQ1_LENGTH = 28;
+  public static byte OFFSET_DQ1_LENGTH = 18;
   public static byte OFFSET_MODULUS_LENGTH = 20;
 
   public static byte IMPORT_STAGE_INIT = 0;
