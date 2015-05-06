@@ -4,3 +4,4 @@ syntax: glob
 *.exp
 *.cap
 *.orig
+*.jar

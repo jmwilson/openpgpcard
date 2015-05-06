@@ -67,9 +67,10 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
   private byte[] certificateBuffer2;
   private byte currentCertificate = (byte)0;
 
-  private byte[] outputChainingBuffer;  // transient
+  private byte[] outputChainingBuffer;
   private short[] outputChain;  // transient
   private byte[] inputChain;  // transient
+  private short[] chainReceived;  // transient
 
   private Cipher rsa;
   private RandomData randomGen;
@@ -109,11 +110,13 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     pw1ValidatedMode = JCSystem.makeTransientBooleanArray(
       (short)2, JCSystem.CLEAR_ON_DESELECT);
     scratchBuffer = JCSystem.makeTransientByteArray(
-      (short)(KeyBuilder.LENGTH_RSA_2048 >> 3), JCSystem.CLEAR_ON_DESELECT);
+      (short)1024, JCSystem.CLEAR_ON_DESELECT);
     outputChain = JCSystem.makeTransientShortArray(
       (short)2, JCSystem.CLEAR_ON_DESELECT);
     inputChain = JCSystem.makeTransientByteArray(
-      OpenPGPCard.INPUT_CHAIN_STATE_SIZE, JCSystem.CLEAR_ON_DESELECT);
+      (short)3, JCSystem.CLEAR_ON_DESELECT);
+    chainReceived = JCSystem.makeTransientShortArray(
+      (short)1, JCSystem.CLEAR_ON_DESELECT);
 
     name = new byte[OpenPGPCard.NAME_SIZE];
     languagePrefs = new byte[OpenPGPCard.LANGUAGE_PREFS_SIZE];
@@ -174,8 +177,8 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
       le = _process(apdu);
     } catch (ISOException e) {
       outputChain[0] = outputChain[1] = (short)0;
-      Util.arrayFillNonAtomic(
-        inputChain, (short)0, OpenPGPCard.INPUT_CHAIN_STATE_SIZE, (byte)0);
+      inputChain[0] = inputChain[1] = inputChain[2] = (byte)0;
+      chainReceived[0] = (short)0;
       throw e;
     }
 
@@ -194,6 +197,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
 
   private short _process(APDU apdu) throws ISOException {
     byte[] buffer = apdu.getBuffer();
+    byte cla = buffer[ISO7816.OFFSET_CLA];
     byte ins = buffer[ISO7816.OFFSET_INS];
     byte p1 = buffer[ISO7816.OFFSET_P1];
     byte p2 = buffer[ISO7816.OFFSET_P2];
@@ -215,16 +219,16 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         ISOException.throwIt(ISO7816.SW_LAST_COMMAND_EXPECTED);
       }
     }
-    if (apdu.isCommandChainingCLA()) {
-      if (ins != OpenPGPCard.CMD_PUT_DATA && ins != OpenPGPCard.CMD_PUT_KEY) {
+    if ((cla & (byte)0x10) != (byte)0) {
+      if (ins != OpenPGPCard.CMD_PUT_DATA && ins != OpenPGPCard.CMD_PUT_KEY
+          && ins != OpenPGPCard.CMD_PERFORM_SECURITY_OPERATION) {
         ISOException.throwIt(ISO7816.SW_COMMAND_CHAINING_NOT_SUPPORTED);
       }
       inputChain[0] = ins;
       inputChain[1] = p1;
       inputChain[2] = p2;
     } else {
-      Util.arrayFillNonAtomic(
-        inputChain, (short)0, OpenPGPCard.INPUT_CHAIN_STATE_SIZE, (byte)0);
+      inputChain[0] = inputChain[1] = inputChain[2] = (byte)0;
     }
 
     switch (ins) {
@@ -276,6 +280,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
       default:
         ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
     }
+
     return le;
   }
 
@@ -684,7 +689,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     short offset_cdata = apdu.getOffsetCdata();
 
     invariant(apdu.getIncomingLength() == lc, ISO7816.SW_WRONG_LENGTH);
-    if (apdu.isCommandChainingCLA() && tag != OpenPGPCard.DO_CERTIFICATE) {
+    if ((cla & (byte)0x10) != (byte)0 && tag != OpenPGPCard.DO_CERTIFICATE) {
       ISOException.throwIt(ISO7816.SW_COMMAND_CHAINING_NOT_SUPPORTED);
     }
 
@@ -785,7 +790,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
         offset = Util.arrayCopy(
           buffer, offset_cdata, cert, (short)(2 + offset), lc);
         Util.setShort(cert, (short)0, (short)(offset - 2));
-        if (!apdu.isCommandChainingCLA()) {
+        if ((cla & (byte)0x10) == (byte)0) {
           currentCertificate ^= 1;
         }
         JCSystem.commitTransaction();
@@ -912,256 +917,117 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     }
   }
 
-  private short saveKeyPartTemplate(byte tag, short offset, short store_offset) {
+  private short readKeyPartDO(byte tag, short offset) {
     invariant(scratchBuffer[offset] == tag, ISO7816.SW_WRONG_DATA);
     byte b = scratchBuffer[(short)(offset + 1)];
     if ((b & (byte)0x80) == 0) {
-      Util.setShort(inputChain, store_offset, b);
+      return b;
     } else if (b == (byte)0x81) {
-      Util.setShort(
-        inputChain, store_offset,
-        (short)(scratchBuffer[(short)(offset + 2)] & 0xFF)
-      );
+      return (short)(scratchBuffer[(short)(offset + 2)] & 0xFF);
     } else if (b == (byte)0x82) {
-      Util.setShort(
-        inputChain, store_offset,
-        Util.getShort(scratchBuffer, (short)(offset + 2))
-      );
-    } else {
-      ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+      return Util.getShort(scratchBuffer, (short)(offset + 2));
     }
-
-    return (short)(2 + (((scratchBuffer[(short)(offset + 1)] & (byte)0x80) != 0)
-      ? scratchBuffer[(short)(offset + 1)] & 0x7F
-      : 0));
+    ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+    return 0;
   }
 
   private void putKey(APDU apdu) {
     byte[] buffer = apdu.getBuffer();
+    byte cla = buffer[ISO7816.OFFSET_CLA];
     short p1p2 = Util.makeShort(
       buffer[ISO7816.OFFSET_P1], buffer[ISO7816.OFFSET_P2]);
-    short apdu_unread = apdu.setIncomingAndReceive();
-    short offset_cdata = apdu.getOffsetCdata();
-    short stage_length = 0;
+    short lc = apdu.setIncomingAndReceive();
     short offset = 0;
     short crt = 0;
 
     invariant(p1p2 == (short)0x3FFF, ISO7816.SW_INCORRECT_P1P2);
 
-    switch(inputChain[OpenPGPCard.OFFSET_STAGE]) {
-      case OpenPGPCard.IMPORT_STAGE_INIT:
-        stage_length = OpenPGPCard.MAX_KEY_IMPORT_HEADER_LENGTH;
-        apdu_unread = readStage(apdu, stage_length, apdu_unread);
-        if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            < stage_length) {
-          return;
-        }
-
-        // Extended header list (tag 0x4D) + length
-        invariant(scratchBuffer[0] == 0x4D, ISO7816.SW_WRONG_DATA);
-        offset = (short)(2 + (((scratchBuffer[1] & (byte)0x80) != 0)
-          ? scratchBuffer[1] & 0x7F : 0));
-
-        // Control reference template
-        crt = Util.getShort(scratchBuffer, offset);
-        invariant(
-          crt == OpenPGPCard.CRT_SIGN_KEY
-          || crt == OpenPGPCard.CRT_DECRYPT_KEY
-          || crt == OpenPGPCard.CRT_AUTH_KEY,
-          ISO7816.SW_WRONG_DATA
-        );
-        offset += 2;
-
-        // Private key template (tag 0x7F48) + length
-        invariant(
-          Util.getShort(scratchBuffer, offset) ==
-            OpenPGPCard.DO_PRIVATE_KEY_TEMPLATE,
-          ISO7816.SW_WRONG_DATA
-        );
-        offset += (short)(3 + (((scratchBuffer[(short)(offset + 2)] & (byte)0x80) != 0)
-          ? scratchBuffer[(short)(offset + 2)] & 0x7F : 0));
-
-        offset += saveKeyPartTemplate(
-          (byte)0x91, offset, OpenPGPCard.OFFSET_EXPONENT_LENGTH);
-        offset += saveKeyPartTemplate(
-          (byte)0x92, offset, OpenPGPCard.OFFSET_P_LENGTH);
-        offset += saveKeyPartTemplate(
-          (byte)0x93, offset, OpenPGPCard.OFFSET_Q_LENGTH);
-        offset += saveKeyPartTemplate(
-          (byte)0x94, offset, OpenPGPCard.OFFSET_PQ_LENGTH);
-        offset += saveKeyPartTemplate(
-          (byte)0x95, offset, OpenPGPCard.OFFSET_DP1_LENGTH);
-        offset += saveKeyPartTemplate(
-          (byte)0x96, offset, OpenPGPCard.OFFSET_DQ1_LENGTH);
-        offset += saveKeyPartTemplate(
-          (byte)0x97, offset, OpenPGPCard.OFFSET_MODULUS_LENGTH);
-
-        // Concatenated key data (tag 0x5F48) + length
-        invariant(
-          Util.getShort(scratchBuffer, offset) ==
-            OpenPGPCard.DO_PRIVATE_KEY_DATA,
-          ISO7816.SW_WRONG_DATA
-        );
-        offset += (short)(3 + (((scratchBuffer[(short)(offset + 2)] & (byte)0x80) != 0)
-          ? scratchBuffer[(short)(offset + 2)] & 0x7F : 0));
-
-        // Move anything left over to the head of scratchBuffer and
-        // set OFFSET_RECEIVED as if we already received it at the beginning
-        // of the next step.
-        Util.arrayCopyNonAtomic(
-          scratchBuffer, offset,
-          scratchBuffer, (short)0,
-          (short)(stage_length - offset)
-        );
-        Util.setShort(
-          inputChain, OpenPGPCard.OFFSET_RECEIVED,
-          (short)(stage_length - offset)
-        );
-        inputChain[OpenPGPCard.OFFSET_STAGE]++;
-        // fall through
-      case OpenPGPCard.IMPORT_STAGE_EXPONENT:
-        stage_length = Util.getShort(
-          inputChain, OpenPGPCard.OFFSET_EXPONENT_LENGTH);
-        apdu_unread = readStage(apdu, stage_length, apdu_unread);
-        if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            < stage_length) {
-          return;
-        }
-        ((RSAPublicKey)importKey.getPublic())
-          .setExponent(scratchBuffer, (short)0, stage_length);
-        Util.arrayCopyNonAtomic(
-          scratchBuffer, stage_length,
-          scratchBuffer, (short)0,
-          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) - stage_length)
-        );
-        Util.setShort(
-          inputChain, OpenPGPCard.OFFSET_RECEIVED,
-          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            - stage_length)
-        );
-        inputChain[OpenPGPCard.OFFSET_STAGE]++;
-        // fall through
-      case OpenPGPCard.IMPORT_STAGE_P:
-        stage_length = Util.getShort(inputChain, OpenPGPCard.OFFSET_P_LENGTH);
-        apdu_unread = readStage(apdu, stage_length, apdu_unread);
-        if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            < stage_length) {
-          return;
-        }
-        ((RSAPrivateCrtKey)importKey.getPrivate())
-          .setP(scratchBuffer, (short)0, stage_length);
-        Util.arrayCopyNonAtomic(
-          scratchBuffer, stage_length,
-          scratchBuffer, (short)0,
-          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) - stage_length)
-        );
-        Util.setShort(
-          inputChain, OpenPGPCard.OFFSET_RECEIVED,
-          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            - stage_length)
-        );
-        inputChain[OpenPGPCard.OFFSET_STAGE]++;
-        // fall through
-      case OpenPGPCard.IMPORT_STAGE_Q:
-        stage_length = Util.getShort(inputChain, OpenPGPCard.OFFSET_Q_LENGTH);
-        apdu_unread = readStage(apdu, stage_length, apdu_unread);
-        if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            < stage_length) {
-          return;
-        }
-        ((RSAPrivateCrtKey)importKey.getPrivate())
-          .setQ(scratchBuffer, (short)0, stage_length);
-        Util.arrayCopyNonAtomic(
-          scratchBuffer, stage_length,
-          scratchBuffer, (short)0,
-          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) - stage_length)
-        );
-        Util.setShort(
-          inputChain, OpenPGPCard.OFFSET_RECEIVED,
-          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            - stage_length)
-        );
-        inputChain[OpenPGPCard.OFFSET_STAGE]++;
-        // fall through
-      case OpenPGPCard.IMPORT_STAGE_PQ:
-        stage_length = Util.getShort(inputChain, OpenPGPCard.OFFSET_PQ_LENGTH);
-        apdu_unread = readStage(apdu, stage_length, apdu_unread);
-        if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            < stage_length) {
-          return;
-        }
-        ((RSAPrivateCrtKey)importKey.getPrivate())
-          .setPQ(scratchBuffer, (short)0, stage_length);
-        Util.arrayCopyNonAtomic(
-          scratchBuffer, stage_length,
-          scratchBuffer, (short)0,
-          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) - stage_length)
-        );
-        Util.setShort(
-          inputChain, OpenPGPCard.OFFSET_RECEIVED,
-          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            - stage_length)
-        );
-        inputChain[OpenPGPCard.OFFSET_STAGE]++;
-        // fall through
-      case OpenPGPCard.IMPORT_STAGE_DP1:
-        stage_length = Util.getShort(inputChain, OpenPGPCard.OFFSET_DP1_LENGTH);
-        apdu_unread = readStage(apdu, stage_length, apdu_unread);
-        if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            < stage_length) {
-          return;
-        }
-        ((RSAPrivateCrtKey)importKey.getPrivate())
-          .setDP1(scratchBuffer, (short)0, stage_length);
-        Util.arrayCopyNonAtomic(
-          scratchBuffer, stage_length,
-          scratchBuffer, (short)0,
-          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) - stage_length)
-        );
-        Util.setShort(
-          inputChain, OpenPGPCard.OFFSET_RECEIVED,
-          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            - stage_length)
-        );
-        inputChain[OpenPGPCard.OFFSET_STAGE]++;
-        // fall through
-      case OpenPGPCard.IMPORT_STAGE_DQ1:
-        stage_length = Util.getShort(inputChain, OpenPGPCard.OFFSET_DQ1_LENGTH);
-        apdu_unread = readStage(apdu, stage_length, apdu_unread);
-        if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            < stage_length) {
-          return;
-        }
-        ((RSAPrivateCrtKey)importKey.getPrivate())
-          .setDQ1(scratchBuffer, (short)0, stage_length);
-        Util.arrayCopyNonAtomic(
-          scratchBuffer, stage_length,
-          scratchBuffer, (short)0,
-          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) - stage_length)
-        );
-        Util.setShort(
-          inputChain, OpenPGPCard.OFFSET_RECEIVED,
-          (short)(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            - stage_length)
-        );
-        inputChain[OpenPGPCard.OFFSET_STAGE]++;
-        // fall through
-      case OpenPGPCard.IMPORT_STAGE_MODULUS:
-        stage_length = Util.getShort(
-          inputChain, OpenPGPCard.OFFSET_MODULUS_LENGTH);
-        apdu_unread = readStage(apdu, stage_length, apdu_unread);
-        if (Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED)
-            < stage_length) {
-          return;
-        }
-        ((RSAPublicKey)importKey.getPublic())
-          .setModulus(scratchBuffer, (short)0, stage_length);
+    chainReceived[0] = Util.arrayCopyNonAtomic(
+      buffer, apdu.getOffsetCdata(),
+      scratchBuffer, chainReceived[0],
+      lc
+    );
+    if ((cla & (byte)0x10) != (byte)0) {
+      return;
     }
+    chainReceived[0] = (short)0;
+
+    // Extended header list (tag 0x4D) + length
+    invariant(scratchBuffer[0] == 0x4D, ISO7816.SW_WRONG_DATA);
+    offset = (short)(((scratchBuffer[1] & (byte)0x80) != 0)
+      ? (scratchBuffer[1] & 0x7F) + 2 : 2);
+
+    // Control reference template
+    crt = Util.getShort(scratchBuffer, offset);
+    invariant(
+      crt == OpenPGPCard.CRT_SIGN_KEY
+      || crt == OpenPGPCard.CRT_DECRYPT_KEY
+      || crt == OpenPGPCard.CRT_AUTH_KEY,
+      ISO7816.SW_WRONG_DATA
+    );
+    offset += 2;
+
+    // Private key template (tag 0x7F48) + length
+    invariant(
+      Util.getShort(scratchBuffer, offset) ==
+        OpenPGPCard.DO_PRIVATE_KEY_TEMPLATE,
+      ISO7816.SW_WRONG_DATA
+    );
+    offset += (short)(((scratchBuffer[(short)(offset + 2)] & (byte)0x80) != 0)
+      ? 3 + (scratchBuffer[(short)(offset + 2)] & 0x7F) : 3);
+
+    short exponent_length = readKeyPartDO((byte)0x91, offset);
+    offset += (short)(((scratchBuffer[(short)(offset + 1)] & (byte)0x80) != 0)
+      ? (short)(2 + (scratchBuffer[(short)(offset + 1)] & 0x7F)) : (short)2);
+    short p_length = readKeyPartDO((byte)0x92, offset);
+    offset += (short)(((scratchBuffer[(short)(offset + 1)] & (byte)0x80) != 0)
+      ? (short)(2 + (scratchBuffer[(short)(offset + 1)] & 0x7F)) : (short)2);
+    short q_length = readKeyPartDO((byte)0x93, offset);
+    offset += (short)(((scratchBuffer[(short)(offset + 1)] & (byte)0x80) != 0)
+      ? (short)(2 + (scratchBuffer[(short)(offset + 1)] & 0x7F)) : (short)2);
+    short pq_length = readKeyPartDO((byte)0x94, offset);
+    offset += (short)(((scratchBuffer[(short)(offset + 1)] & (byte)0x80) != 0)
+      ? (short)(2 + (scratchBuffer[(short)(offset + 1)] & 0x7F)) : (short)2);
+    short dp1_length = readKeyPartDO((byte)0x95, offset);
+    offset += (short)(((scratchBuffer[(short)(offset + 1)] & (byte)0x80) != 0)
+      ? (short)(2 + (scratchBuffer[(short)(offset + 1)] & 0x7F)) : (short)2);
+    short dq1_length = readKeyPartDO((byte)0x96, offset);
+    offset += (short)(((scratchBuffer[(short)(offset + 1)] & (byte)0x80) != 0)
+      ? (short)(2 + (scratchBuffer[(short)(offset + 1)] & 0x7F)) : (short)2);
+    short modulus_length = readKeyPartDO((byte)0x97, offset);
+    offset += (short)(((scratchBuffer[(short)(offset + 1)] & (byte)0x80) != 0)
+      ? (short)(2 + (scratchBuffer[(short)(offset + 1)] & 0x7F)) : (short)2);
+
+    // Concatenated key data (tag 0x5F48) + length
+    invariant(
+      Util.getShort(scratchBuffer, offset) == OpenPGPCard.DO_PRIVATE_KEY_DATA,
+      ISO7816.SW_WRONG_DATA
+    );
+    offset += (short)(((scratchBuffer[(short)(offset + 2)] & (byte)0x80) != 0)
+      ? (short)(3 + (scratchBuffer[(short)(offset + 2)] & 0x7F)) : (short)3);
+
+    ((RSAPublicKey)importKey.getPublic())
+      .setExponent(scratchBuffer, offset, exponent_length);
+    offset += exponent_length;
+    ((RSAPrivateCrtKey)importKey.getPrivate())
+      .setP(scratchBuffer, offset, p_length);
+    offset += p_length;
+    ((RSAPrivateCrtKey)importKey.getPrivate())
+      .setQ(scratchBuffer, offset, q_length);
+    offset += q_length;
+    ((RSAPrivateCrtKey)importKey.getPrivate())
+      .setPQ(scratchBuffer, offset, pq_length);
+    offset += pq_length;
+    ((RSAPrivateCrtKey)importKey.getPrivate())
+      .setDP1(scratchBuffer, offset, dp1_length);
+    offset += dp1_length;
+    ((RSAPrivateCrtKey)importKey.getPrivate())
+      .setDQ1(scratchBuffer, offset, dq1_length);
+    offset += dq1_length;
+    ((RSAPublicKey)importKey.getPublic())
+      .setModulus(scratchBuffer, offset, modulus_length);
 
     // swap references between the imported key and destination key
-    crt = Util.getShort(inputChain, OpenPGPCard.OFFSET_CRT);
-    Util.arrayFillNonAtomic(
-      inputChain, (short)0, OpenPGPCard.INPUT_CHAIN_STATE_SIZE, (byte)0);
     JCSystem.beginTransaction();
     if (crt == OpenPGPCard.CRT_SIGN_KEY) {
       KeyPair tmp = signKey;
@@ -1181,37 +1047,6 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
     importKey.getPublic().clearKey();
     importKey.getPrivate().clearKey();
     JCSystem.commitTransaction();
-  }
-
-  private short readStage(APDU apdu, short stage_size, short apdu_unread) {
-    byte buffer[] = apdu.getBuffer();
-    short offset_cdata = apdu.getOffsetCdata();
-
-    while(Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED) < stage_size
-          && (apdu_unread > (short)0 ||
-              apdu.getCurrentState() != APDU.STATE_FULL_INCOMING)) {
-      if (apdu_unread == (short)0) {
-        apdu_unread = apdu.receiveBytes(offset_cdata);
-      }
-      short length = apdu_unread < (short)(stage_size -
-        Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED))
-        ? apdu_unread
-        : (short)(stage_size -
-                  Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED));
-      Util.setShort(
-        inputChain, OpenPGPCard.OFFSET_RECEIVED,
-        Util.arrayCopyNonAtomic(
-          buffer, offset_cdata,
-          scratchBuffer, Util.getShort(inputChain, OpenPGPCard.OFFSET_RECEIVED),
-          length
-        )
-      );
-      apdu_unread -= length;
-    }
-    // At the end of the loop, either we have at least stage_size bytes in
-    // scratchBuffer, or no bytes in the APDU buffer and no futher
-    // bytes available to receive.
-    return apdu_unread;
   }
 
   private short generateKey(APDU apdu) {
@@ -1286,8 +1121,12 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
 
   private short computeSignature(APDU apdu) {
     byte[] buffer = apdu.getBuffer();
+    byte cla = buffer[ISO7816.OFFSET_CLA];
     short lc = apdu.setIncomingAndReceive();
 
+    if ((cla & (byte)0x10) != (byte)0) {
+      ISOException.throwIt(ISO7816.SW_COMMAND_CHAINING_NOT_SUPPORTED);
+    }
     invariant(lc == apdu.getIncomingLength(), ISO7816.SW_WRONG_LENGTH);
     invariant(
       signKey.getPrivate().isInitialized(),
@@ -1313,6 +1152,7 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
 
   private short decipher(APDU apdu) {
     byte[] buffer = apdu.getBuffer();
+    byte cla = buffer[ISO7816.OFFSET_CLA];
     short lc = apdu.setIncomingAndReceive();
 
     invariant(lc == apdu.getIncomingLength(), ISO7816.SW_WRONG_LENGTH);
@@ -1325,11 +1165,30 @@ public class OpenPGPCardApplet extends javacard.framework.Applet
       ISO7816.SW_SECURITY_STATUS_NOT_SATISFIED
     );
 
-    Util.arrayCopyNonAtomic(
-      buffer, apdu.getOffsetCdata(), scratchBuffer, (short)0, lc);
+    if (chainReceived[0] == (short)0) {
+      chainReceived[0] = Util.arrayCopyNonAtomic(
+        buffer, (short)(1 + apdu.getOffsetCdata()),
+        scratchBuffer, (short)0,
+        (short)(lc - 1));
+    } else {
+      chainReceived[0] = Util.arrayCopyNonAtomic(
+        buffer, apdu.getOffsetCdata(),
+        scratchBuffer, chainReceived[0],
+        lc);
+    }
+    if ((cla & (byte)0x10) != (byte)0) {
+      return (short)0;
+    }
+    invariant(
+      chainReceived[0] == decryptKey.getPrivate().getSize() >> 3,
+      ISO7816.SW_WRONG_LENGTH);
+
+    short len = chainReceived[0];
+    chainReceived[0] = (short)0;
     apdu.setOutgoing();
     rsa.init(decryptKey.getPrivate(), Cipher.MODE_DECRYPT);
-    return rsa.doFinal(scratchBuffer, (short)0, lc, buffer, (short)0);
+    return rsa.doFinal(scratchBuffer, (short)0, chainReceived[0],
+      buffer, (short)0);
   }
 
   private void invariant(boolean condition, short sw) {

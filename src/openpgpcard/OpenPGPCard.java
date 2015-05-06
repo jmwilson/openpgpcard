@@ -89,48 +89,4 @@ public interface OpenPGPCard {
   public static short CRT_SIGN_KEY = (short)0xB600;
   public static short CRT_DECRYPT_KEY = (short)0xB800;
   public static short CRT_AUTH_KEY = (short)0xA400;
-
-  public static byte MAX_KEY_IMPORT_HEADER_LENGTH = 44;
-  /*
-    struct {
-      byte ins;               // 0
-      byte p1;                // 1
-      byte p2;                // 2
-      // For key import:
-      byte key_import_stage;  // 3
-      short stage_received;   // 4
-      short crt;              // 6
-      short exponent_length;  // 8
-      short p_length;         // 10
-      short q_length;         // 12
-      short pq_length;        // 14
-      short dp1_length;       // 16
-      short dq1_length;       // 18
-      short modulus_length;   // 20
-    }
-  */
-  public static byte INPUT_CHAIN_STATE_SIZE = 22;
-
-  public static byte OFFSET_INS = 0;
-  public static byte OFFSET_P1 = 1;
-  public static byte OFFSET_P2 = 2;
-  public static byte OFFSET_STAGE = 3;
-  public static byte OFFSET_RECEIVED = 4;
-  public static byte OFFSET_CRT = 6;
-  public static byte OFFSET_EXPONENT_LENGTH = 8;
-  public static byte OFFSET_P_LENGTH = 10;
-  public static byte OFFSET_Q_LENGTH = 12;
-  public static byte OFFSET_PQ_LENGTH = 14;
-  public static byte OFFSET_DP1_LENGTH = 16;
-  public static byte OFFSET_DQ1_LENGTH = 18;
-  public static byte OFFSET_MODULUS_LENGTH = 20;
-
-  public static byte IMPORT_STAGE_INIT = 0;
-  public static byte IMPORT_STAGE_EXPONENT = 1;
-  public static byte IMPORT_STAGE_P = 2;
-  public static byte IMPORT_STAGE_Q = 3;
-  public static byte IMPORT_STAGE_PQ = 4;
-  public static byte IMPORT_STAGE_DP1 = 5;
-  public static byte IMPORT_STAGE_DQ1 = 6;
-  public static byte IMPORT_STAGE_MODULUS = 7;
 }
