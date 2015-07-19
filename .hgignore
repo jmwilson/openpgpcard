@@ -1,7 +1,6 @@
 syntax: glob
-*.class
-*.jca
-*.exp
-*.cap
 *.orig
-*.jar
+
+syntax: regexp
+^build
+^test/build
