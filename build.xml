@@ -11,29 +11,23 @@
 	<property name="JAVACARD_HOME" value="${env.JC_HOME}"/>
 	<property name="JAVA_PACKAGE" value="openpgpcard"/>
 	<property name="APPLET_NAME" value="OpenPGPCardApplet"/>
-	<property name="PACKAGE_AID" value="0xd2:0x76:0x00:0x01:0x24:0x01"/>
-	<property name="APPLET_AID" value="0xd2:0x76:0x00:0x01:0x24:0x01:0x02:0x00:0x00:0x00:0x00:0x00:0x00:0x55:0x00:0x00"/>
+	<property name="PACKAGE_AID" value="0xD2:0x76:0x00:0x01:0x24:0x01"/>
+	<exec executable="/bin/sh" outputproperty="APPLET_AID">
+		<arg file="aid.sh" />
+	</exec>
 	<property name="VERSION" value="0.1"/>
 	<target name="init">
 		<mkdir dir="${build}"/>
 		<mkdir dir="${test.build}/output"/>
 	</target>
-	<target name="compile" depends="init" description="compile the source" unless="test.build.mock">
+	<target name="compile" depends="init" description="compile the source">
 		<javac debug="true" srcdir="${src}" destdir="${build}" includeantruntime="false" source="1.5" target="1.5">
 			<classpath>
 				<pathelement path="${JAVACARD_HOME}/lib/api.jar"/>
 			</classpath>
 		</javac>
 	</target>
-	<target name="compileMock" depends="init" description="compile with mocked javacard" if="test.build.mock">
-		<javac debug="true" srcdir="${src}" destdir="${build}" source="1.5" target="1.5" includeantruntime="false">
-			<classpath>
-				<pathelement location="/usr/share/java/junit4.jar"/>
-				<pathelement location="test/jcardsim-3.0.4-SNAPSHOT.jar"/>
-			</classpath>
-		</javac>
-	</target>
-	<target depends="compile" name="convert" description="convert to .cap" unless="test.build.mock">
+	<target depends="compile" name="convert" description="convert to .cap">
 		<java classname="com.sun.javacard.converter.Converter" fork="true" failonerror="true">
 			<arg line="-classdir ${build}"/>
 			<arg line="-verbose"/>
@@ -51,7 +45,7 @@
 		<delete dir="${build}"/>
 		<delete dir="${test.build}"/>
 	</target>
-	<target name="compileTest" depends="compile,compileMock">
+	<target name="compileTest" depends="compile">
 		<javac debug="true" srcdir="${test.src}" destdir="${test.build}" source="1.5" target="1.5" includeantruntime="false">
 			<classpath>
 				<pathelement path="${build}"/>

@@ -25,7 +25,9 @@ public interface OpenPGPCard {
 	public static byte CMD_CHANGE_REFERENCE_DATA = 0x24;
 	public static byte CMD_RESET_RETRY_COUNTER = 0x2C;
 	public static byte CMD_GET_CHALLENGE = (byte)0x84;
+	public static byte CMD_SELECT_DATA = (byte)0xA5;
 	public static byte CMD_GET_DATA = (byte)0xCA;
+	public static byte CMD_GET_NEXT_DATA = (byte)0xCC;
 	public static byte CMD_PUT_DATA = (byte)0xDA;
 	public static byte CMD_PUT_KEY = (byte)0xDB;
 	public static byte CMD_GENERATE_ASYMMETRIC_KEY_PAIR = 0x47;
@@ -63,6 +65,8 @@ public interface OpenPGPCard {
 	public static short DO_LOGIN_DATA = 0x005E;
 	public static short DO_URL = 0x5F50;
 	public static short DO_HISTORICAL_BYTES = 0x5F52;
+	public static short DO_EXTENDED_LENGTH_INFO = 0x7F66;
+	public static short DO_GENERAL_FEATURE_MANAGEMENT = 0x7F74;
 	public static short DO_CARDHOLDER_DATA = 0x0065;
 	public static short DO_NAME = 0x005B;
 	public static short DO_LANGUAGE_PREFS = 0x5F2D;
