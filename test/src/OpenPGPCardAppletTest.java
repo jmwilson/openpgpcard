@@ -466,67 +466,11 @@ public class OpenPGPCardAppletTest {
 	}
 
 	private byte[] getPinRetries() {
-		byte[] result = new byte[3];
 		byte[] resp = simulator.transmitCommand(new byte[] {
-			0, (byte)0xca, 0, (byte)0x6e, 0,
+			0, (byte)0xca, 0, (byte)0xc4, 0,
 		});
 		assertEquals(ISO7816.SW_NO_ERROR, sw(resp));
-
-		assertEquals((byte)OpenPGPCard.DO_APPLICATION_DATA, resp[0]);
-		int i = 1;
-		if ((resp[i] & 0x80) != 0) {
-			i += 1 + (resp[i] & 0xf);
-		} else {
-			i++;
-		}
-		while (resp[i] != (byte)OpenPGPCard.DO_DISCRETIONARY_DOS) {
-			if ((resp[i++] & 0x1f) == 0x1f) {  // bitmask for multibyte tag
-				while((resp[i] & 0x80) != 0) {
-					i++;
-				}
-				i++;
-			}
-			int len = 0;
-			if ((resp[i] & 0x80) != 0) {  // multibyte length
-				switch (resp[i++] & 0xf) {
-					case 2:
-						len = resp[i++] & 0xff;  // fall through
-					case 1:
-						len = (len << 8) | (resp[i++] & 0xff);
-				}
-			} else {
-				len = resp[i++];
-			}
-			i += len;
-		}
-
-		i++;
-		if ((resp[i] & 0x80) != 0) {
-			i += 1 + (resp[i] & 0xf);
-		} else {
-			i++;
-		}
-		while (resp[i] != (byte)OpenPGPCard.DO_PW_STATUS) {
-			i++;
-			int len = 0;
-			if ((resp[i] & 0x80) != 0) {
-				switch (resp[i++] & 0xf) {
-					case 2:
-						len = resp[i++] & 0xff;  // fall through
-					case 1:
-						len = (len << 8) | (resp[i++] & 0xff);
-				}
-			} else {
-				len = resp[i++];
-			}
-			i += len;
-		}
-
-		i += 6; // tag, length, force signature, 3 x max pin size
-		result[0] = resp[i++];
-		result[1] = resp[i++];
-		result[2] = resp[i++];
-		return result;
+		return Arrays.copyOfRange(resp, 4, 7);
 	}
 
 	@SuppressWarnings("unused")
