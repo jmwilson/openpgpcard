@@ -106,6 +106,25 @@ public class OpenPGPCardAppletTest {
 	}
 
 	@Test
+	public void testGetChallenge() {
+		byte[] resp = simulator.transmitCommand(new byte[] {
+			0x00, (byte)0x84, 0x00, 0x00, 0x00,
+		});
+		assertEquals(258, resp.length);
+		assertEquals(ISO7816.SW_NO_ERROR, sw(resp));
+
+		resp = simulator.transmitCommand(new byte[] {
+			0x00, (byte)0x84, 0x01, 0x00, 0x00,
+		});
+		assertEquals(ISO7816.SW_INCORRECT_P1P2, sw(resp));
+
+		resp = simulator.transmitCommand(new byte[] {
+			0x00, (byte)0x84, 0x00, 0x01, 0x00,
+		});
+		assertEquals(ISO7816.SW_INCORRECT_P1P2, sw(resp));
+	}
+
+	@Test
 	public void testTerminate() {
 		byte[] resp = simulator.transmitCommand(new byte[] {0, (byte) 0xe6, 0, 0});
 		assertEquals(ISO7816.SW_CONDITIONS_NOT_SATISFIED, sw(resp));
@@ -145,6 +164,12 @@ public class OpenPGPCardAppletTest {
 
 	@Test
 	public void testUnblock() {
+		byte[] resp = simulator.transmitCommand(new byte[] {
+			0x00, 0x20, 0x00, (byte)0x81, 8,
+			'1', '2', '3', '4', '5', '6', (byte)0xff, (byte)0xff,
+		});
+		assertEquals(ISO7816.SW_NO_ERROR, sw(resp));
+
 		assertArrayEquals(new byte[] {3, 3, 3}, getPinRetries());
 		assertEquals(false, doVerify("654321", (byte) 0x81));
 		assertArrayEquals(new byte[] {2, 3, 3}, getPinRetries());
@@ -152,12 +177,19 @@ public class OpenPGPCardAppletTest {
 		assertArrayEquals(new byte[] {1, 3, 3}, getPinRetries());
 		assertEquals(false, doVerify("654321", (byte) 0x81));
 		assertArrayEquals(new byte[] {0, 3, 3}, getPinRetries());
-		assertEquals(false, doVerify("123456", (byte) 0x81));
+
+		resp = simulator.transmitCommand(new byte[] {
+			0x00, 0x20, 0x00, (byte)0x81, 8,
+			'1', '2', '3', '4', '5', '6', (byte)0xff, (byte)0xff,
+		});
+		assertEquals(OpenPGPCard.SW_PIN_FAILED_00, sw(resp));
 
 		assertEquals(true, doVerify("12345678", (byte) 0x83));
-		byte[] res = simulator.transmitCommand(new byte[] {0, 0x2c, 0x02, (byte) 0x81, 0x06,
-				'6', '5', '4', '3', '2', '1'});
-		assertArrayEquals(success,  res);
+		resp = simulator.transmitCommand(new byte[] {
+			0, 0x2c, 0x02, (byte) 0x81, 0x06,
+			'6', '5', '4', '3', '2', '1'
+		});
+		assertEquals(ISO7816.SW_NO_ERROR, sw(resp));
 
 		assertEquals(true, doVerify("654321", (byte) 0x81));
 		assertArrayEquals(new byte[] {3, 3, 3}, getPinRetries());
